@@ -42,8 +42,44 @@ function normalizarTexto(texto) {
     .trim();
 }
 
-function calcularScoreSimilaridade(nomeProduto, termoBusca) {
-  const produto = normalizarTexto(nomeProduto);
+const STOPWORDS_BUSCA = new Set(['de', 'do', 'da', 'dos', 'das', 'e', 'em', 'para', 'com', 'sem']);
+
+const FORMAS_FARMACEUTICAS = [
+  {
+    id: 'gotas',
+    termosBusca: ['gota', 'gotas', 'gts'],
+    regexFortes: [/\bgota\b/, /\bgotas\b/, /\bgts\b/],
+    regexSuaves: [/\bliq\b/, /\bliquido\b/, /\bsol\b/, /\bsolucao\b/, /\bsusp\b/, /\bsuspensao\b/, /\bxarope\b/, /\bxpe\b/, /\bml\b/, /\b\d+ml\b/],
+    regexConflito: [/\bcomprimido\b/, /\bcomprimidos\b/, /\bcp\b/, /\bcps\b/, /\bcpr\b/, /\bcprs\b/, /\b\d+cp\b/, /\b\d+cps\b/, /\bcapsula\b/, /\bcapsulas\b/, /\bcaps\b/, /\bcap\b/],
+  },
+  {
+    id: 'comprimido',
+    termosBusca: ['comprimido', 'comprimidos', 'cp', 'cps', 'cpr', 'cprs', 'capsula', 'capsulas', 'cap', 'caps', 'dragea', 'drageas'],
+    regexFortes: [/\bcomprimido\b/, /\bcomprimidos\b/, /\bcp\b/, /\bcps\b/, /\bcpr\b/, /\bcprs\b/, /\b\d+cp\b/, /\b\d+cps\b/, /\bcapsula\b/, /\bcapsulas\b/, /\bcaps\b/, /\bcap\b/, /\bdragea\b/, /\bdrageas\b/],
+    regexSuaves: [],
+    regexConflito: [/\bgota\b/, /\bgotas\b/, /\bgts\b/, /\bliq\b/, /\bliquido\b/, /\bsol\b/, /\bsolucao\b/, /\bsusp\b/, /\bsuspensao\b/, /\bxarope\b/, /\bxpe\b/, /\bml\b/, /\b\d+ml\b/],
+  },
+];
+
+const TERMOS_FORMA = new Set(FORMAS_FARMACEUTICAS.flatMap(forma => forma.termosBusca));
+
+function montarTextoBuscaProduto(produto) {
+  if (typeof produto === 'string') {
+    return produto;
+  }
+
+  return [
+    produto?.nome,
+    produto?.nomePrincipioAtivo,
+    produto?.nomeLaboratorio,
+    ...(Array.isArray(produto?.tags) ? produto.tags : []),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function calcularScoreTextoBase(textoProduto, termoBusca) {
+  const produto = normalizarTexto(textoProduto);
   const busca = normalizarTexto(termoBusca);
 
   if (!produto || !busca) return 0;
@@ -65,6 +101,101 @@ function calcularScoreSimilaridade(nomeProduto, termoBusca) {
   }
 
   return 0;
+}
+
+function extrairPreferenciasBusca(termoBusca) {
+  const termoOriginal = String(termoBusca || '').trim();
+  const termoNormalizado = normalizarTexto(termoOriginal);
+  const tokens = termoNormalizado.split(' ').filter(Boolean);
+  const formasSolicitadas = FORMAS_FARMACEUTICAS
+    .filter(forma => forma.termosBusca.some(termo => tokens.includes(termo)))
+    .map(forma => forma.id);
+
+  const tokensBase = tokens.filter(token => {
+    if (STOPWORDS_BUSCA.has(token)) return false;
+    if (TERMOS_FORMA.has(token)) return false;
+    if (/^\d+$/.test(token)) return false;
+    if (/^\d+(mg|ml|g|mcg|ui)$/i.test(token)) return false;
+    return token.length >= 2;
+  });
+
+  const termoBase = tokensBase.join(' ').trim();
+  const termoPrincipal = tokensBase.length > 1 ? tokensBase[0] : '';
+  const termosConsulta = [];
+
+  for (const termo of [termoOriginal, termoBase, termoPrincipal]) {
+    const termoLimpo = String(termo || '').trim();
+    if (!termoLimpo) continue;
+    if (termosConsulta.some(item => normalizarTexto(item) === normalizarTexto(termoLimpo))) continue;
+    termosConsulta.push(termoLimpo);
+  }
+
+  return {
+    termoOriginal,
+    termoNormalizado,
+    formasSolicitadas,
+    termoBase,
+    termosConsulta,
+  };
+}
+
+function temRegex(texto, regexes) {
+  return regexes.some(regex => regex.test(texto));
+}
+
+function avaliarCompatibilidadeForma(nomeProduto, preferenciasBusca) {
+  const textoProduto = normalizarTexto(nomeProduto);
+
+  if (!textoProduto || !preferenciasBusca || preferenciasBusca.formasSolicitadas.length === 0) {
+    return { bonus: 0, compatibilidade: 'neutra' };
+  }
+
+  let bonus = 0;
+  let encontrouForte = false;
+  let encontrouSuave = false;
+  let encontrouConflito = false;
+
+  for (const formaId of preferenciasBusca.formasSolicitadas) {
+    const forma = FORMAS_FARMACEUTICAS.find(item => item.id === formaId);
+    if (!forma) continue;
+
+    if (temRegex(textoProduto, forma.regexFortes)) {
+      bonus += 35;
+      encontrouForte = true;
+      continue;
+    }
+
+    if (temRegex(textoProduto, forma.regexSuaves)) {
+      bonus += 18;
+      encontrouSuave = true;
+    }
+
+    if (temRegex(textoProduto, forma.regexConflito)) {
+      encontrouConflito = true;
+    }
+  }
+
+  if (!encontrouForte && !encontrouSuave && encontrouConflito) {
+    bonus -= 25;
+  }
+
+  return {
+    bonus,
+    compatibilidade: encontrouForte ? 'forte' : encontrouSuave ? 'suave' : encontrouConflito ? 'conflitante' : 'neutra',
+  };
+}
+
+function calcularScoreSimilaridade(produto, termoBusca, preferenciasBusca = extrairPreferenciasBusca(termoBusca)) {
+  const nomeProduto = typeof produto === 'string' ? produto : produto?.nome;
+  const textoBuscaProduto = montarTextoBuscaProduto(produto);
+  const scoreOriginal = calcularScoreTextoBase(textoBuscaProduto, termoBusca);
+  const scoreTermoBase = preferenciasBusca.termoBase
+    ? calcularScoreTextoBase(textoBuscaProduto, preferenciasBusca.termoBase)
+    : 0;
+  const scoreTexto = Math.max(scoreOriginal, scoreTermoBase);
+  const { bonus } = avaliarCompatibilidadeForma(nomeProduto, preferenciasBusca);
+
+  return Math.max(0, scoreTexto + bonus);
 }
 
 // ─── Resolução de melhor preço ─────────────────────────────────────────────────
@@ -171,6 +302,65 @@ async function buscarTodosProdutos(cliente, nomeProduto) {
   return extrairListaDaResposta(response.data, 'obter-todos-v1');
 }
 
+async function consultarProdutosPorTermo(cliente, termoConsulta) {
+  const resultadoV1 = await buscarProdutoPorNome(cliente, termoConsulta);
+  if (resultadoV1.length > 0) {
+    return { produtos: resultadoV1, metodo: 'obter-v1', termo: termoConsulta };
+  }
+
+  console.log(`[TRIER] obter-v1 sem resultado para "${termoConsulta}", tentando obter-todos-v1...`);
+  const resultadoTodos = await buscarTodosProdutos(cliente, termoConsulta);
+  return { produtos: resultadoTodos, metodo: 'obter-todos-v1', termo: termoConsulta };
+}
+
+function deduplicarProdutosPorCodigo(produtos) {
+  const mapa = new Map();
+
+  for (const produto of produtos) {
+    if (!produto || produto.codigo == null) continue;
+    if (!mapa.has(produto.codigo)) {
+      mapa.set(produto.codigo, produto);
+    }
+  }
+
+  return Array.from(mapa.values());
+}
+
+function possuiProdutoCompativelComForma(produtos, preferenciasBusca) {
+  if (!preferenciasBusca || preferenciasBusca.formasSolicitadas.length === 0) {
+    return produtos.length > 0;
+  }
+
+  return produtos.some(produto => {
+    const { compatibilidade } = avaliarCompatibilidadeForma(produto.nome, preferenciasBusca);
+    return compatibilidade === 'forte' || compatibilidade === 'suave';
+  });
+}
+
+async function buscarProdutosComEstrategia(cliente, preferenciasBusca) {
+  const consultasRealizadas = [];
+  let produtosAcumulados = [];
+
+  for (const termoConsulta of preferenciasBusca.termosConsulta) {
+    console.log(`[TRIER] Tentando termo de busca: "${termoConsulta}"`);
+
+    const consulta = await consultarProdutosPorTermo(cliente, termoConsulta);
+    consultasRealizadas.push({
+      termo: consulta.termo,
+      metodo: consulta.metodo,
+      total: consulta.produtos.length,
+    });
+
+    produtosAcumulados = deduplicarProdutosPorCodigo([...produtosAcumulados, ...consulta.produtos]);
+
+    if (possuiProdutoCompativelComForma(produtosAcumulados, preferenciasBusca)) {
+      break;
+    }
+  }
+
+  return { produtos: produtosAcumulados, consultasRealizadas };
+}
+
 async function buscarMelhorDesconto(cliente, codigoProduto) {
   try {
     const response = await cliente.get('/rest/integracao/produto/desconto/melhor/obter-v1', {
@@ -231,11 +421,23 @@ async function enriquecerSequencial(cliente, produtos) {
 
 const SCORE_MINIMO = 40;
 
-function filtrarEOrdenarPorRelevancia(produtos, termoBusca) {
+function filtrarEOrdenarPorRelevancia(produtos, termoBusca, preferenciasBusca) {
   return produtos
-    .map(p => ({ ...p, _score: calcularScoreSimilaridade(p.nome, termoBusca) }))
+    .map(produto => {
+      const compatibilidadeForma = avaliarCompatibilidadeForma(produto.nome, preferenciasBusca);
+      return {
+        ...produto,
+        _score: calcularScoreSimilaridade(produto, termoBusca, preferenciasBusca),
+        _forma_compatibilidade: compatibilidadeForma.compatibilidade,
+        _forma_bonus: compatibilidadeForma.bonus,
+      };
+    })
     .filter(p => p._score >= SCORE_MINIMO)
-    .sort((a, b) => b._score - a._score);
+    .sort((a, b) => {
+      if (b._score !== a._score) return b._score - a._score;
+      if (b._forma_bonus !== a._forma_bonus) return b._forma_bonus - a._forma_bonus;
+      return (b.quantidadeEstoque ?? 0) - (a.quantidadeEstoque ?? 0);
+    });
 }
 
 // Remove produtos sem estoque APÓS enriquecimento (estoque vem da busca principal)
@@ -253,36 +455,50 @@ function filtrarComEstoque(produtos) {
 async function buscarProdutosTrierPorNome(termoBusca, limite = 20) {
   const cliente = criarCliente();
   const termoNormalizado = termoBusca.trim();
+  const preferenciasBusca = extrairPreferenciasBusca(termoNormalizado);
 
   console.log(`\n========================================`);
   console.log(`[TRIER] Buscando: "${termoNormalizado}"`);
+  if (preferenciasBusca.termosConsulta.length > 1) {
+    console.log(`[TRIER] Estrategia expandida: ${preferenciasBusca.termosConsulta.join(' | ')}`);
+  }
   console.log(`========================================`);
 
   let produtos = [];
-  let metodo = '';
+  let consultasRealizadas = [];
 
   try {
-    const resultadoV1 = await buscarProdutoPorNome(cliente, termoNormalizado);
-    if (resultadoV1.length > 0) {
-      produtos = resultadoV1;
-      metodo = 'obter-v1';
-    } else {
-      console.log(`[TRIER] obter-v1 sem resultado, tentando obter-todos-v1...`);
-      produtos = await buscarTodosProdutos(cliente, termoNormalizado);
-      metodo = 'obter-todos-v1';
-    }
-    console.log(`[TRIER] ${metodo} retornou ${produtos.length} produto(s)`);
+    const resultadoBusca = await buscarProdutosComEstrategia(cliente, preferenciasBusca);
+    produtos = resultadoBusca.produtos;
+    consultasRealizadas = resultadoBusca.consultasRealizadas;
+    console.log(`[TRIER] Busca consolidada retornou ${produtos.length} produto(s) apos deduplicacao`);
   } catch (erro) {
     console.error(`[TRIER] Erro na busca:`, erro.message);
     throw new Error(`Falha ao consultar API Trier: ${erro.message}`);
   }
 
+  const consultaComResultado = consultasRealizadas.find(consulta => consulta.total > 0);
+  const metodoBusca = consultaComResultado?.metodo || consultasRealizadas.at(-1)?.metodo || '';
+
   if (produtos.length === 0) {
-    return { produtos: [], metadados: { termo_original: termoNormalizado, metodo_busca: metodo, total_bruto: 0, total_apos_filtro: 0, total_com_estoque: 0, total_enriquecido: 0 } };
+    return {
+      produtos: [],
+      metadados: {
+        termo_original: termoNormalizado,
+        metodo_busca: metodoBusca,
+        busca_expandida: preferenciasBusca.termosConsulta.length > 1,
+        termos_consultados: consultasRealizadas.map(consulta => consulta.termo),
+        forma_solicitada: preferenciasBusca.formasSolicitadas,
+        total_bruto: 0,
+        total_apos_filtro: 0,
+        total_com_estoque: 0,
+        total_enriquecido: 0,
+      },
+    };
   }
 
   // 1) Filtra por relevância textual
-  const filtrados = filtrarEOrdenarPorRelevancia(produtos, termoNormalizado);
+  const filtrados = filtrarEOrdenarPorRelevancia(produtos, termoNormalizado, preferenciasBusca);
 
   // 2) Remove sem estoque logo aqui — antes de enriquecer (economiza requests)
   const comEstoque = filtrarComEstoque(filtrados);
@@ -292,7 +508,20 @@ async function buscarProdutosTrierPorNome(termoBusca, limite = 20) {
 
   if (selecionados.length === 0) {
     console.warn(`[TRIER] Nenhum produto com estoque encontrado`);
-    return { produtos: [], metadados: { termo_original: termoNormalizado, metodo_busca: metodo, total_bruto: produtos.length, total_apos_filtro: filtrados.length, total_com_estoque: 0, total_enriquecido: 0 } };
+    return {
+      produtos: [],
+      metadados: {
+        termo_original: termoNormalizado,
+        metodo_busca: metodoBusca,
+        busca_expandida: preferenciasBusca.termosConsulta.length > 1,
+        termos_consultados: consultasRealizadas.map(consulta => consulta.termo),
+        forma_solicitada: preferenciasBusca.formasSolicitadas,
+        total_bruto: produtos.length,
+        total_apos_filtro: filtrados.length,
+        total_com_estoque: 0,
+        total_enriquecido: 0,
+      },
+    };
   }
 
   // 3) Enriquece sequencialmente (um por vez, 2 requests paralelos por produto)
@@ -304,7 +533,10 @@ async function buscarProdutosTrierPorNome(termoBusca, limite = 20) {
     produtos: enriquecidos,
     metadados: {
       termo_original: termoNormalizado,
-      metodo_busca: metodo,
+      metodo_busca: metodoBusca,
+      busca_expandida: preferenciasBusca.termosConsulta.length > 1,
+      termos_consultados: consultasRealizadas.map(consulta => consulta.termo),
+      forma_solicitada: preferenciasBusca.formasSolicitadas,
       total_bruto: produtos.length,
       total_apos_filtro: filtrados.length,
       total_com_estoque: comEstoque.length,
