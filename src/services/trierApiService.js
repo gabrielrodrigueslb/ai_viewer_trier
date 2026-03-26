@@ -1,5 +1,5 @@
-const axios = require('axios');
-const { TRIER_BASE_URL, TRIER_TOKEN } = require('../config/env');
+import axios from 'axios';
+import { TRIER_BASE_URL, TRIER_TOKEN } from '../config/env.js';
 
 const PAGE_SIZE = 50;
 const TIMEOUT_BUSCA = 20000;
@@ -545,4 +545,4 @@ async function buscarProdutosTrierPorNome(termoBusca, limite = 20) {
   };
 }
 
-module.exports = { buscarProdutosTrierPorNome, resolverMelhorPreco, calcularScoreSimilaridade };
+export { buscarProdutosTrierPorNome, resolverMelhorPreco, calcularScoreSimilaridade };

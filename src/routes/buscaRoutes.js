@@ -1,6 +1,6 @@
-const express = require('express');
-const { buscarProdutosTrierPorNome } = require('../services/trierApiService');
-const { ranquearProdutosComIA } = require('../services/aiRankingService');
+import express from 'express';
+import { buscarProdutosTrierPorNome } from '../services/trierApiService.js';
+import { ranquearProdutosComIA } from '../services/aiRankingService.js';
 
 const router = express.Router();
 
@@ -94,4 +94,4 @@ router.get('/', (req, res) => {
   res.json({ mensagem: 'API de busca Trier está rodando!' });
 });
 
-module.exports = { router };
+export { router };

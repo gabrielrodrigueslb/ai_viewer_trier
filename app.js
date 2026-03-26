@@ -1,7 +1,6 @@
-const express = require('express');
-const { PORT } = require('./src/config/env');
-
-const { router } = require('./src/routes/buscaRoutes');
+import express from 'express';
+import { PORT } from './src/config/env.js';
+import { router } from './src/routes/buscaRoutes.js';
 
 const app = express();
 app.use(express.json());

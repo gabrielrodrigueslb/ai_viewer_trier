@@ -1,6 +1,6 @@
-const fs = require('fs');
-const path = require('path');
-const dotenv = require('dotenv');
+import fs from 'fs';
+import path from 'path';
+import dotenv from 'dotenv';
 
 const DEFAULT_TRIER_BASE_URL = 'https://api-sgf-gateway.triersistemas.com.br/sgfpod1';
 
@@ -35,10 +35,9 @@ function lerTextoEnv(nomeVariavel, valorPadrao = '') {
 
 carregarEnv();
 
-module.exports = {
-  carregarEnv,
-  PORT: lerTextoEnv('PORT', '5232'),
-  TRIER_BASE_URL: lerTextoEnv('TRIER_BASE_URL', DEFAULT_TRIER_BASE_URL).replace(/\/+$/, ''),
-  TRIER_TOKEN: lerTextoEnv('TRIER_TOKEN'),
-  OPENAI_API_KEY: lerTextoEnv('OPENAI_API_KEY'),
-};
+const PORT = lerTextoEnv('PORT', '5232');
+const TRIER_BASE_URL = lerTextoEnv('TRIER_BASE_URL', DEFAULT_TRIER_BASE_URL).replace(/\/+$/, '');
+const TRIER_TOKEN = lerTextoEnv('TRIER_TOKEN');
+const OPENAI_API_KEY = lerTextoEnv('OPENAI_API_KEY');
+
+export { carregarEnv, PORT, TRIER_BASE_URL, TRIER_TOKEN, OPENAI_API_KEY };

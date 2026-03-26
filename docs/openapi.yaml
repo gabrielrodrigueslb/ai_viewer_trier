@@ -1,0 +1,274 @@
+openapi: 3.0.3
+info:
+  title: Trier Integration API
+  version: 1.0.0
+  description: >
+    API para busca de medicamentos na Trier com fallback de consulta,
+    enriquecimento de preco e ranqueamento opcional com OpenAI.
+servers:
+  - url: http://localhost:5285
+    description: Exemplo local
+paths:
+  /:
+    get:
+      summary: Health check
+      operationId: getRoot
+      responses:
+        '200':
+          description: API disponivel
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensagem:
+                    type: string
+                    example: API de busca Trier esta rodando!
+                required:
+                  - mensagem
+  /api/buscar-medicamentos:
+    post:
+      summary: Buscar medicamentos
+      description: >
+        Busca medicamentos na Trier, aplica score textual, filtra estoque,
+        enriquece precos e opcionalmente reranqueia o resultado com IA.
+      operationId: buscarMedicamentos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuscarMedicamentosRequest'
+            examples:
+              dorflexGotas:
+                summary: Busca com forma farmaceutica
+                value:
+                  query: dorflex gotas
+                  limite: 5
+      responses:
+        '200':
+          description: Busca processada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuscarMedicamentosResponse'
+        '400':
+          description: Requisicao invalida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroSimples'
+              examples:
+                queryVazia:
+                  value:
+                    erro: Query vazia
+        '500':
+          description: Erro interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDetalhado'
+components:
+  schemas:
+    BuscarMedicamentosRequest:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Texto buscado pelo usuario final
+          example: dipirona gotas
+        limite:
+          type: integer
+          minimum: 1
+          description: Quantidade maxima de produtos apos filtros
+          example: 10
+      required:
+        - query
+    BuscarMedicamentosResponse:
+      type: object
+      properties:
+        busca:
+          $ref: '#/components/schemas/BuscaInfo'
+        metadados:
+          $ref: '#/components/schemas/MetadadosBusca'
+        produtos:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProdutoBusca'
+      required:
+        - busca
+        - metadados
+        - produtos
+    BuscaInfo:
+      type: object
+      properties:
+        termo_original:
+          type: string
+          example: dipirona gotas
+      required:
+        - termo_original
+    MetadadosBusca:
+      type: object
+      properties:
+        termo_original:
+          type: string
+        metodo_busca:
+          type: string
+          example: obter-v1
+        busca_expandida:
+          type: boolean
+        termos_consultados:
+          type: array
+          items:
+            type: string
+        forma_solicitada:
+          type: array
+          items:
+            type: string
+            enum:
+              - gotas
+              - comprimido
+        total_bruto:
+          type: integer
+        total_apos_filtro:
+          type: integer
+        total_com_estoque:
+          type: integer
+        total_enriquecido:
+          type: integer
+        total_produtos:
+          type: integer
+        ordenado_por_ia:
+          type: boolean
+      required:
+        - termo_original
+        - metodo_busca
+        - busca_expandida
+        - termos_consultados
+        - forma_solicitada
+        - total_bruto
+        - total_apos_filtro
+        - total_com_estoque
+        - total_enriquecido
+        - ordenado_por_ia
+    ProdutoBusca:
+      type: object
+      properties:
+        posicao:
+          type: integer
+          example: 1
+        codigo:
+          type: integer
+          example: 2751
+        codigo_barras:
+          nullable: true
+          oneOf:
+            - type: integer
+            - type: string
+        nome:
+          type: string
+          example: DIPIRONA 50MG/ML LIQ 100ML
+        laboratorio:
+          type: string
+          nullable: true
+          example: MEDLEY
+        principio_ativo:
+          type: string
+          nullable: true
+          example: DIPIRONA
+        grupo:
+          type: string
+          nullable: true
+        departamento:
+          type: string
+          nullable: true
+        estoque:
+          type: integer
+          example: 24
+        ativo:
+          type: boolean
+          example: true
+        precos:
+          $ref: '#/components/schemas/PrecoProduto'
+        relevancia_score:
+          type: integer
+          nullable: true
+        origem_score:
+          type: string
+          enum:
+            - textual
+            - ia
+      required:
+        - posicao
+        - codigo
+        - codigo_barras
+        - nome
+        - laboratorio
+        - principio_ativo
+        - grupo
+        - departamento
+        - estoque
+        - ativo
+        - precos
+        - relevancia_score
+        - origem_score
+    PrecoProduto:
+      type: object
+      properties:
+        preco_final:
+          type: number
+          format: float
+          nullable: true
+        preco_sem_desconto:
+          type: number
+          format: float
+          nullable: true
+        desconto_percentual:
+          type: number
+          format: float
+          nullable: true
+        tipo_preco:
+          type: string
+          nullable: true
+          enum:
+            - encarte
+            - promocao
+            - desconto_cadastrado
+            - venda
+        nome_campanha:
+          type: string
+          nullable: true
+        data_inicio_campanha:
+          type: string
+          nullable: true
+        data_fim_campanha:
+          type: string
+          nullable: true
+        tem_oferta:
+          type: boolean
+      required:
+        - preco_final
+        - preco_sem_desconto
+        - desconto_percentual
+        - tipo_preco
+        - nome_campanha
+        - data_inicio_campanha
+        - data_fim_campanha
+        - tem_oferta
+    ErroSimples:
+      type: object
+      properties:
+        erro:
+          type: string
+      required:
+        - erro
+    ErroDetalhado:
+      type: object
+      properties:
+        erro:
+          type: string
+        detalhes:
+          type: string
+      required:
+        - erro
+        - detalhes
