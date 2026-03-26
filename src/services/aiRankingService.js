@@ -1,5 +1,11 @@
+<<<<<<< HEAD
 const axios = require('axios');
 const { OPENAI_API_KEY } = require('../config/env');
+=======
+import axios from 'axios';
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+>>>>>>> b70b1db6688f2bca94508c064fc8c4c5923b1cf5
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const MAX_PRODUTOS_IA = 20;
 
@@ -147,4 +153,4 @@ REGRAS OBRIGATÓRIAS:
   }
 }
 
-module.exports = { ranquearProdutosComIA };
+export { ranquearProdutosComIA };
