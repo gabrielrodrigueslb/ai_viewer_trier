@@ -1,4 +1,4 @@
-const axios = require('axios');
+import axios from 'axios';
 
 const TRIER_BASE_URL = process.env.TRIER_BASE_URL || 'https://api-sgf-gateway.triersistemas.com.br/sgfpod1 ';
 const TRIER_TOKEN = process.env.TRIER_TOKEN || '';
@@ -303,4 +303,4 @@ async function buscarProdutosTrierPorNome(termoBusca, limite = 20) {
   };
 }
 
-module.exports = { buscarProdutosTrierPorNome, resolverMelhorPreco, calcularScoreSimilaridade };
+export { buscarProdutosTrierPorNome, resolverMelhorPreco, calcularScoreSimilaridade };

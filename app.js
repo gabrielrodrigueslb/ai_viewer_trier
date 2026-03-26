@@ -1,7 +1,9 @@
-const express = require('express');
-require('dotenv').config();
+import dotenv from 'dotenv';
+import express from 'express';
 
-const { router } = require('./src/routes/buscaRoutes');
+import { router } from './src/routes/buscaRoutes.js';
+
+dotenv.config();
 
 const app = express();
 app.use(express.json());
