@@ -1,7 +1,5 @@
 const axios = require('axios');
-
-const TRIER_BASE_URL = process.env.TRIER_BASE_URL || 'https://api-sgf-gateway.triersistemas.com.br/sgfpod1 ';
-const TRIER_TOKEN = process.env.TRIER_TOKEN || '';
+const { TRIER_BASE_URL, TRIER_TOKEN } = require('../config/env');
 
 const PAGE_SIZE = 50;
 const TIMEOUT_BUSCA = 20000;
@@ -9,7 +7,19 @@ const TIMEOUT_DESCONTO = 15000; // aumentado: API Trier é lenta nesses endpoint
 
 // ─── Cliente HTTP ─────────────────────────────────────────────────────────────
 
+function validarConfiguracaoTrier() {
+  if (!TRIER_BASE_URL) {
+    throw new Error('TRIER_BASE_URL não configurada. Defina a URL da API Trier em .env ou .env.local.');
+  }
+
+  if (!TRIER_TOKEN) {
+    throw new Error('TRIER_TOKEN não configurado. Defina o token da API Trier em .env ou .env.local.');
+  }
+}
+
 function criarCliente() {
+  validarConfiguracaoTrier();
+
   return axios.create({
     baseURL: TRIER_BASE_URL,
     timeout: TIMEOUT_BUSCA,

@@ -1,6 +1,5 @@
 const axios = require('axios');
-
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const { OPENAI_API_KEY } = require('../config/env');
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const MAX_PRODUTOS_IA = 20;
 
