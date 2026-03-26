@@ -1,7 +1,9 @@
 import axios from 'axios';
 
-const TRIER_BASE_URL = process.env.TRIER_BASE_URL || 'https://api-sgf-gateway.triersistemas.com.br/sgfpod1 ';
-const TRIER_TOKEN = process.env.TRIER_TOKEN || '';
+const TRIER_BASE_URL = String(
+  process.env.TRIER_BASE_URL || 'https://api-sgf-gateway.triersistemas.com.br/sgfpod1'
+).trim();
+const TRIER_TOKEN = String(process.env.TRIER_TOKEN || '').trim();
 
 const PAGE_SIZE = 50;
 const TIMEOUT_BUSCA = 20000;
@@ -18,6 +20,20 @@ function criarCliente() {
       'Content-Type': 'application/json',
     },
   });
+}
+
+function descreverErroTrier(erro) {
+  const status = erro.response?.status;
+
+  if (status === 498) {
+    return 'Token Trier invalido/expirado, nao autorizado para esta URL ou com espacos extras no .env.';
+  }
+
+  if (status === 401 || status === 403) {
+    return `Falha de autenticacao na Trier (HTTP ${status}).`;
+  }
+
+  return erro.message;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -263,8 +279,9 @@ async function buscarProdutosTrierPorNome(termoBusca, limite = 20) {
     }
     console.log(`[TRIER] ${metodo} retornou ${produtos.length} produto(s)`);
   } catch (erro) {
-    console.error(`[TRIER] Erro na busca:`, erro.message);
-    throw new Error(`Falha ao consultar API Trier: ${erro.message}`);
+    const mensagem = descreverErroTrier(erro);
+    console.error(`[TRIER] Erro na busca:`, mensagem);
+    throw new Error(`Falha ao consultar API Trier: ${mensagem}`);
   }
 
   if (produtos.length === 0) {
