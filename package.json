@@ -1,0 +1,20 @@
+{
+  "name": "trier-integration",
+  "version": "1.0.0",
+  "description": "Integração com a API da Trier Drogarias para busca e ranqueamento de produtos",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "openai": "^6.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}
