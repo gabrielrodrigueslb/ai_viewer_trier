@@ -48,6 +48,7 @@ const FORMAS_FARMACEUTICAS = [
   {
     id: 'gotas',
     termosBusca: ['gota', 'gotas', 'gts'],
+    aliasesEntrada: ['gt', 'gta'],
     regexFortes: [/\bgota\b/, /\bgotas\b/, /\bgts\b/],
     regexSuaves: [/\bliq\b/, /\bliquido\b/, /\bsol\b/, /\bsolucao\b/, /\bsusp\b/, /\bsuspensao\b/, /\bxarope\b/, /\bxpe\b/, /\bml\b/, /\b\d+ml\b/],
     regexConflito: [/\bcomprimido\b/, /\bcomprimidos\b/, /\bcp\b/, /\bcps\b/, /\bcpr\b/, /\bcprs\b/, /\b\d+cp\b/, /\b\d+cps\b/, /\bcapsula\b/, /\bcapsulas\b/, /\bcaps\b/, /\bcap\b/],
@@ -55,13 +56,20 @@ const FORMAS_FARMACEUTICAS = [
   {
     id: 'comprimido',
     termosBusca: ['comprimido', 'comprimidos', 'cp', 'cps', 'cpr', 'cprs', 'capsula', 'capsulas', 'cap', 'caps', 'dragea', 'drageas'],
+    aliasesEntrada: ['comp', 'comps', 'compr', 'comprs', 'comprim', 'comprims'],
     regexFortes: [/\bcomprimido\b/, /\bcomprimidos\b/, /\bcp\b/, /\bcps\b/, /\bcpr\b/, /\bcprs\b/, /\b\d+cp\b/, /\b\d+cps\b/, /\bcapsula\b/, /\bcapsulas\b/, /\bcaps\b/, /\bcap\b/, /\bdragea\b/, /\bdrageas\b/],
     regexSuaves: [],
     regexConflito: [/\bgota\b/, /\bgotas\b/, /\bgts\b/, /\bliq\b/, /\bliquido\b/, /\bsol\b/, /\bsolucao\b/, /\bsusp\b/, /\bsuspensao\b/, /\bxarope\b/, /\bxpe\b/, /\bml\b/, /\b\d+ml\b/],
   },
 ];
 
-const TERMOS_FORMA = new Set(FORMAS_FARMACEUTICAS.flatMap(forma => forma.termosBusca));
+const TERMOS_FORMA = new Set(
+  FORMAS_FARMACEUTICAS.flatMap(forma => [...forma.termosBusca, ...(forma.aliasesEntrada || [])])
+);
+
+const ALIAS_FORMA_POR_TOKEN = new Map(
+  FORMAS_FARMACEUTICAS.flatMap(forma => (forma.aliasesEntrada || []).map(alias => [alias, forma.id]))
+);
 
 function montarTextoBuscaProduto(produto) {
   if (typeof produto === 'string') {
@@ -103,13 +111,17 @@ function calcularScoreTextoBase(textoProduto, termoBusca) {
   return 0;
 }
 
-function extrairPreferenciasBusca(termoBusca) {
-  const termoOriginal = String(termoBusca || '').trim();
-  const termoNormalizado = normalizarTexto(termoOriginal);
-  const tokens = termoNormalizado.split(' ').filter(Boolean);
-  const formasSolicitadas = FORMAS_FARMACEUTICAS
-    .filter(forma => forma.termosBusca.some(termo => tokens.includes(termo)))
-    .map(forma => forma.id);
+function normalizarTokenForma(token) {
+  if (!token) return token;
+  return ALIAS_FORMA_POR_TOKEN.get(token) || token;
+}
+
+function extrairTermoBaseDoTexto(termoBusca) {
+  const termoNormalizado = normalizarTexto(termoBusca);
+  const tokens = termoNormalizado
+    .split(' ')
+    .filter(Boolean)
+    .map(normalizarTokenForma);
 
   const tokensBase = tokens.filter(token => {
     if (STOPWORDS_BUSCA.has(token)) return false;
@@ -119,7 +131,22 @@ function extrairPreferenciasBusca(termoBusca) {
     return token.length >= 2;
   });
 
-  const termoBase = tokensBase.join(' ').trim();
+  return tokensBase.join(' ').trim();
+}
+
+function extrairPreferenciasBusca(termoBusca) {
+  const termoOriginal = String(termoBusca || '').trim();
+  const termoNormalizado = normalizarTexto(termoOriginal);
+  const tokens = termoNormalizado
+    .split(' ')
+    .filter(Boolean)
+    .map(normalizarTokenForma);
+  const formasSolicitadas = FORMAS_FARMACEUTICAS
+    .filter(forma => forma.termosBusca.some(termo => tokens.includes(termo)))
+    .map(forma => forma.id);
+
+  const termoBase = extrairTermoBaseDoTexto(termoOriginal);
+  const tokensBase = termoBase.split(' ').filter(Boolean);
   const termoPrincipal = tokensBase.length > 1 ? tokensBase[0] : '';
   const termosConsulta = [];
 
@@ -196,6 +223,29 @@ function calcularScoreSimilaridade(produto, termoBusca, preferenciasBusca = extr
   const { bonus } = avaliarCompatibilidadeForma(nomeProduto, preferenciasBusca);
 
   return Math.max(0, scoreTexto + bonus);
+}
+
+function construirTermosPontuacao(termoBuscaOriginal, preferenciasBusca, consultasRealizadas) {
+  const termos = [];
+
+  for (const termo of [
+    termoBuscaOriginal,
+    preferenciasBusca?.termoBase,
+    ...(consultasRealizadas || []).filter(consulta => consulta.total > 0).map(consulta => consulta.termo),
+  ]) {
+    const termoLimpo = String(termo || '').trim();
+    if (!termoLimpo) continue;
+
+    const termoBase = extrairTermoBaseDoTexto(termoLimpo);
+    for (const candidato of [termoLimpo, termoBase]) {
+      const valor = String(candidato || '').trim();
+      if (!valor) continue;
+      if (termos.some(item => normalizarTexto(item) === normalizarTexto(valor))) continue;
+      termos.push(valor);
+    }
+  }
+
+  return termos;
 }
 
 // ─── Resolução de melhor preço ─────────────────────────────────────────────────
@@ -421,13 +471,18 @@ async function enriquecerSequencial(cliente, produtos) {
 
 const SCORE_MINIMO = 40;
 
-function filtrarEOrdenarPorRelevancia(produtos, termoBusca, preferenciasBusca) {
+function filtrarEOrdenarPorRelevancia(produtos, termosPontuacao, preferenciasBusca) {
   return produtos
     .map(produto => {
       const compatibilidadeForma = avaliarCompatibilidadeForma(produto.nome, preferenciasBusca);
+      const score = termosPontuacao.reduce(
+        (maiorScore, termo) => Math.max(maiorScore, calcularScoreSimilaridade(produto, termo, preferenciasBusca)),
+        0
+      );
+
       return {
         ...produto,
-        _score: calcularScoreSimilaridade(produto, termoBusca, preferenciasBusca),
+        _score: score,
         _forma_compatibilidade: compatibilidadeForma.compatibilidade,
         _forma_bonus: compatibilidadeForma.bonus,
       };
@@ -498,7 +553,8 @@ async function buscarProdutosTrierPorNome(termoBusca, limite = 20) {
   }
 
   // 1) Filtra por relevância textual
-  const filtrados = filtrarEOrdenarPorRelevancia(produtos, termoNormalizado, preferenciasBusca);
+  const termosPontuacao = construirTermosPontuacao(termoNormalizado, preferenciasBusca, consultasRealizadas);
+  const filtrados = filtrarEOrdenarPorRelevancia(produtos, termosPontuacao, preferenciasBusca);
 
   // 2) Remove sem estoque logo aqui — antes de enriquecer (economiza requests)
   const comEstoque = filtrarComEstoque(filtrados);
